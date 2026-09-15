@@ -231,6 +231,35 @@
       font-size: 0.95rem;
     }
 
+    .card-header-acoes {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .btn-editar-card,
+    .btn-excluir-card {
+      background: transparent;
+      border: 1px solid #323238;
+      color: #a8a8b3;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .btn-editar-card:hover {
+      border-color: #00ff88;
+      color: #00ff88;
+    }
+
+    .btn-excluir-card:hover {
+      border-color: #ff4d4d;
+      color: #ff4d4d;
+    }
+
     .btn-like {
       background: rgba(0, 255, 136, 0.1);
       color: #00ff88;
@@ -321,6 +350,23 @@
       background: #00ff88;
       color: #121214;
     }
+
+    /* Form de edição no Card */
+    .form-edicao-card {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .form-edicao-card input,
+    .form-edicao-card textarea {
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(18, 18, 20, 0.9);
+      border: 1px solid #29292e;
+      border-radius: 6px;
+      color: #fff;
+    }
   </style>
 
   <!-- SDK oficial do Supabase via CDN -->
@@ -381,6 +427,7 @@
           <input type="text" id="input-emoji" placeholder="Emoji (ex: 😍, 🚀, 🤡)" maxlength="50" required />
           <textarea id="input-texto" placeholder="O que você está pensando?" required></textarea>
           <input type="text" id="input-hashtags" placeholder="Hashtags separadas por espaço (ex: #dev #supabase)" />
+          <input type="password" id="input-senha" placeholder="Senha para editar/excluir no futuro" required />
           
           <div class="form-acoes">
             <button type="button" class="btn-cancelar" onclick="toggleFormulario()">Cancelar</button>
@@ -437,6 +484,7 @@
       const emoji = document.getElementById("input-emoji").value.trim();
       const texto = document.getElementById("input-texto").value.trim();
       const hashtagsRaw = document.getElementById("input-hashtags").value.trim();
+      const senha = document.getElementById("input-senha").value.trim();
 
       const hashtags = hashtagsRaw
         ? hashtagsRaw.split(" ")
@@ -446,7 +494,7 @@
 
       const { error } = await supabaseClient
         .from("postagens")
-        .insert([{ emoji, texto, hashtags }]);
+        .insert([{ emoji, texto, hashtags, senha }]);
 
       if (error) {
         alert("Erro ao criar postagem!");
@@ -455,6 +503,115 @@
       }
 
       formContainerEl.innerHTML = "";
+      carregarPostagens();
+    }
+
+    // Exibe o formulário de edição no card
+    function abrirFormularioEdicao(id, emojiAtual, textoAtual, hashtagsAtuais) {
+      const cardEl = document.getElementById(`card-${id}`);
+      if (!cardEl) return;
+
+      const hashtagsString = Array.isArray(hashtagsAtuais) ? hashtagsAtuais.join(" ") : "";
+
+      cardEl.innerHTML = `
+        <form class="form-edicao-card" onsubmit="salvarEdicao(event, ${id})">
+          <strong>Editar Postagem</strong>
+          <input type="password" id="edit-senha-${id}" placeholder="Digite a senha deste post" required />
+          <input type="text" id="edit-emoji-${id}" value="${emojiAtual}" placeholder="Emoji" required />
+          <textarea id="edit-texto-${id}" placeholder="Texto do post" required>${textoAtual}</textarea>
+          <input type="text" id="edit-hashtags-${id}" value="${hashtagsString}" placeholder="Hashtags" />
+          
+          <div class="form-acoes">
+            <button type="button" class="btn-cancelar" onclick="carregarPostagens()">Cancelar</button>
+            <button type="submit" class="btn-enviar">Salvar</button>
+          </div>
+        </form>
+      `;
+    }
+
+    // Processa a edição e verifica a senha da coluna "senha"
+    async function salvarEdicao(event, id) {
+      event.preventDefault();
+
+      const senhaInformada = document.getElementById(`edit-senha-${id}`).value.trim();
+      const emojiNovo = document.getElementById(`edit-emoji-${id}`).value.trim();
+      const textoNovo = document.getElementById(`edit-texto-${id}`).value.trim();
+      const hashtagsRaw = document.getElementById(`edit-hashtags-${id}`).value.trim();
+
+      // Consulta a postagem para comparar com a coluna "senha"
+      const { data: post, error: fetchError } = await supabaseClient
+        .from("postagens")
+        .select("senha")
+        .eq("id", id)
+        .single();
+
+      if (fetchError || !post) {
+        alert("Erro ao verificar dados da postagem.");
+        return;
+      }
+
+      if (post.senha !== senhaInformada) {
+        alert("Senha incorreta! Não é possível editar a postagem.");
+        return;
+      }
+
+      const hashtagsNovas = hashtagsRaw
+        ? hashtagsRaw.split(" ")
+          .filter(h => h.length > 0)
+          .map(h => h.startsWith('#') ? h : '#' + h)
+        : [];
+
+      const { error: updateError } = await supabaseClient
+        .from("postagens")
+        .update({
+          emoji: emojiNovo,
+          texto: textoNovo,
+          hashtags: hashtagsNovas
+        })
+        .eq("id", id);
+
+      if (updateError) {
+        alert("Erro ao atualizar a postagem.");
+        console.error(updateError);
+        return;
+      }
+
+      carregarPostagens();
+    }
+
+    // Exclui a postagem com checagem de senha
+    async function deletarPost(id) {
+      const senhaInformada = prompt("Digite a senha do post para confirmação de exclusão:");
+
+      if (!senhaInformada) return;
+
+      const { data: post, error: fetchError } = await supabaseClient
+        .from("postagens")
+        .select("senha")
+        .eq("id", id)
+        .single();
+
+      if (fetchError || !post) {
+        alert("Erro ao verificar os dados da postagem.");
+        return;
+      }
+
+      if (post.senha !== senhaInformada.trim()) {
+        alert("Senha incorreta! Não é possível excluir esta postagem.");
+        return;
+      }
+
+      const { error: deleteError } = await supabaseClient
+        .from("postagens")
+        .delete()
+        .eq("id", id);
+
+      if (deleteError) {
+        alert("Erro ao excluir a postagem.");
+        console.error(deleteError);
+        return;
+      }
+
       carregarPostagens();
     }
 
@@ -491,23 +648,30 @@
         return;
       }
 
-      // Obtém as curtidas salvas nesta máquina
       const curtidasLocais = getCurtidasLocais();
 
       feedEl.innerHTML = "";
       postagens.forEach(post => {
         const card = document.createElement("div");
         card.className = "card";
+        card.id = `card-${post.id}`;
 
         const hashtagsTexto = post.hashtags ? post.hashtags.join(" ") : "";
         const listaComentariosHTML = (post.comentarios || [])
           .map(c => `<li>${c}</li>`)
           .join("");
 
-        // Checa se o post atual já foi curtido localmente
         const jaCurtido = curtidasLocais.includes(post.id);
 
+        const emojiEscapado = (post.emoji || '❤️').replace(/"/g, '&quot;');
+        const textoEscapado = (post.texto || '').replace(/"/g, '&quot;');
+        const hashtagsJSON = JSON.stringify(post.hashtags || []).replace(/"/g, '&quot;');
+
         card.innerHTML = `
+          <div class="card-header-acoes">
+            <button class="btn-editar-card" onclick="abrirFormularioEdicao(${post.id}, '${emojiEscapado}', '${textoEscapado}', ${hashtagsJSON})">✏️ Editar</button>
+            <button class="btn-excluir-card" onclick="deletarPost(${post.id})">🗑️ Excluir</button>
+          </div>
           <div class="box emoji-box">${post.emoji || '❤️'}</div>
           <div class="box texto-box">${post.texto}</div>
           <div class="box hashtags-box">${hashtagsTexto}</div>
